@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import csv
+import time
 import os
 import random
 from datetime import datetime
@@ -138,6 +139,10 @@ with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
             print(f"{timestamp()} ⚠️ Request error with {case_number}: {e}", flush=True)
         except Exception as e:
             print(f"{timestamp()} ⚠️ General error with {case_number}: {e}", flush=True)
+
+        sleep_duration = random.uniform(4, 9)
+        print(f"{timestamp()} 💤 Sleeping for {sleep_duration:.2f} seconds to simulate human-like pacing...", flush=True)
+        time.sleep(sleep_duration)
 
         current += 1
 
