@@ -4,7 +4,7 @@ import csv
 import time
 import os
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 
 def timestamp():
     return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
@@ -25,30 +25,33 @@ with open("progress.txt", "w") as prog:
 
 temp_csv_file = f"charges_CR{year}_{start}-placeholder.csv"
 
-# 🔁 Desktop-style header rotation pool
+# 🔁 Updated rotating headers
 header_pool = [
     {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.129 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://duckduckgo.com/",
+        "Referer": "https://startpage.com/",
         "Connection": "keep-alive"
     },
     {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.6045.159 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.6312.105 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml",
         "Accept-Language": "en-US,en;q=0.8",
-        "Referer": "https://bing.com/",
+        "Referer": "https://search.brave.com/",
         "Connection": "keep-alive"
     },
     {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.70 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.128 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "en-GB,en;q=0.9",
-        "Referer": "https://search.brave.com/",
+        "Referer": "https://duckduckgo.com/",
         "Connection": "keep-alive"
     }
 ]
+
+start_time = datetime.now()
+max_duration = timedelta(hours=5)
 
 with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
     writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -59,12 +62,17 @@ with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
     session = requests.Session()
 
     while current <= end:
+        if datetime.now() - start_time > max_duration:
+            print(f"{timestamp()} ⏱️ Max run time of 5 hours exceeded. Saving progress and exiting...", flush=True)
+            with open("progress.txt", "w") as prog:
+                prog.write(str(current))
+            break
+
         case_number = f"{prefix}{str(current).zfill(6)}"
         url = f"https://www.superiorcourt.maricopa.gov/docket/CriminalCourtCases/caseInfo.asp?caseNumber={case_number}"
         print(f"{timestamp()} Checking case: {case_number}", flush=True)
 
-        retries = 3
-        while retries > 0:
+        while True:
             headers = random.choice(header_pool)
             try:
                 req = session.get(url, headers=headers, timeout=15)
@@ -80,7 +88,6 @@ with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
 
                 if "Server busy. Please try again later." in page_text:
                     print(f"{timestamp()} 🔄 Server busy detected. Rotating headers and retrying...", flush=True)
-                    retries -= 1
                     time.sleep(random.uniform(5, 8))
                     continue
                 elif "Please try again later" in page_text or "temporarily unavailable" in page_text:
@@ -131,15 +138,14 @@ with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
                                     "Disposition": disposition
                                 })
                                 found_relevant_charge = True
-                break  # break retry loop after successful attempt
+                break
 
             except requests.exceptions.RequestException as e:
                 print(f"{timestamp()} ⚠️ Request error with {case_number}: {e}", flush=True)
-                retries -= 1
                 time.sleep(random.uniform(5, 10))
             except Exception as e:
                 print(f"{timestamp()} ⚠️ General error with {case_number}: {e}", flush=True)
-                retries = 0
+                break
 
         sleep_duration = random.uniform(4, 9)
         print(f"{timestamp()} 💤 Sleeping for {sleep_duration:.2f} seconds to simulate human-like pacing...", flush=True)
