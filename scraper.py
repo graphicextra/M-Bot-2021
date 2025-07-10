@@ -65,28 +65,12 @@ with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
     session = requests.Session()
 
     while current <= end:
-        if current % 15 == 0:
-            session = requests.Session()
-            print(f"{timestamp()} 🔄 New session created to mimic browser restart", flush=True)
-
         case_number = f"{prefix}{str(current).zfill(6)}"
         print(f"{timestamp()} Checking case: {case_number}", flush=True)
-
-        random_param = random.randint(100000, 999999)
-        url = f"https://www.superiorcourt.maricopa.gov/docket/CriminalCourtCases/caseInfo.asp?caseNumber={case_number}&r={random_param}"
+        url = f"https://www.superiorcourt.maricopa.gov/docket/CriminalCourtCases/caseInfo.asp?caseNumber={case_number}"
 
         try:
             headers = random.choice(header_pool)
-
-            # Optional pre-visit to main court site to mimic a browser
-            try:
-                homepage_url = "https://www.superiorcourt.maricopa.gov"
-                home_headers = random.choice(header_pool)
-                session.get(homepage_url, headers=home_headers, timeout=10)
-                print(f"{timestamp()} 👣 Visited homepage before case request", flush=True)
-            except Exception as e:
-                print(f"{timestamp()} ⚠️ Homepage visit failed: {e}", flush=True)
-
             req = session.get(url, headers=headers, timeout=15)
             print(f"{timestamp()} Request status: {req.status_code} URL: {req.url}", flush=True)
 
