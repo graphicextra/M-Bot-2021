@@ -17,9 +17,18 @@ on:
         default: "2024"
 
 jobs:
-  run-scraper-a:
+  run-matrix-scraper:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        instance: [1, 2, 3, 4]  # Launches 4 parallel attempts
     steps:
+      - name: Random delay to spread requests
+        run: |
+          SEED=$((RANDOM % 20 + 5))
+          echo "Sleeping for $SEED seconds before running scraper..."
+          sleep $SEED
+
       - name: Checkout repo
         uses: actions/checkout@v3
 
@@ -68,4 +77,3 @@ jobs:
               -d "{\"event_type\":\"continue-with-b\",\"client_payload\":{\"start\":\"$NEXT_START\",\"end\":\"${{ inputs.END }}\",\"year\":\"${{ inputs.YEAR }}\"}}"
           else
             echo "✅ Full range completed. No need to continue."
-          fi
