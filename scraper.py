@@ -5,19 +5,12 @@ import random
 import logging
 from bs4 import BeautifulSoup
 from datetime import datetime
-from pyairtable import Api
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import csv
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-AIRTABLE_API_KEY = os.environ["AIRTABLE_API_KEY"]
-BASE_ID = "appwbCU6BAWOA1AQX"
-TABLE_ID = "tblb0yIYr91PzghXQ"
-
-api = Api(AIRTABLE_API_KEY)
-table = api.table(BASE_ID, TABLE_ID)
 
 TODAY = datetime.today()
 
@@ -74,6 +67,8 @@ def extract_docket_data(url, suspect_name):
         logging.debug(response.text[:1000])
 
     result = {
+        "Suspect Name": suspect_name,
+        "URL": url,
         "Attorney": None,
         "Crime": None,
         "Status": None,
@@ -81,7 +76,7 @@ def extract_docket_data(url, suspect_name):
         "Next Hearing Date": None,
         "Trial": None,
         "Sentencing": None,
-        "fldX72Wdvk52dP8NG": None
+        "Last Filed": None
     }
 
     party_sections = soup.find_all("div", id="tblForms2")
@@ -194,24 +189,30 @@ def extract_docket_data(url, suspect_name):
                     latest_description = description
 
     if latest_description:
-        result["fldX72Wdvk52dP8NG"] = latest_description
+        result["Last Filed"] = latest_description
 
     return result
 
 # --- MAIN LOOP ---
-records = table.all(fields=["Suspect Name", "Court Docket"])
-for record in records:
-    fields = record.get("fields", {})
-    suspect = fields.get("Suspect Name")
-    docket_url = fields.get("Court Docket")
+case_data = [
+    {"name": "John Doe", "url": "https://www.superiorcourt.maricopa.gov/docket/CriminalCourtCases/caseInfo.asp?caseNumber=CR2021-001234"},
+    {"name": "Jane Smith", "url": "https://www.superiorcourt.maricopa.gov/docket/CriminalCourtCases/caseInfo.asp?caseNumber=CR2022-005678"},
+]
 
-    if not suspect or not docket_url:
-        continue
-
+results = []
+for case in case_data:
     try:
-        print(f"Processing {suspect}")
-        data = extract_docket_data(docket_url, suspect)
-        print(f"Updating: {data}")
-        table.update(record["id"], data)
+        print(f"Processing {case['name']}")
+        data = extract_docket_data(case["url"], case["name"])
+        results.append(data)
     except Exception as e:
-        logging.error(f"Error processing {suspect}: {e}")
+        logging.error(f"Error processing {case['name']}: {e}")
+
+# --- Write results to CSV ---
+fieldnames = ["Suspect Name", "URL", "Attorney", "Crime", "Status", "Next Hearing", "Next Hearing Date", "Trial", "Sentencing", "Last Filed"]
+with open("court_scrape_results.csv", "w", newline="", encoding="utf-8") as f:
+    writer = csv.DictWriter(f, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(results)
+
+print("✅ Scrape complete. Results saved to court_scrape_results.csv")
