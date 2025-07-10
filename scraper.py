@@ -31,21 +31,39 @@ header_pool = [
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Referer": "https://startpage.com/",
-        "Connection": "keep-alive"
+        "Connection": "keep-alive",
+        "DNT": "1",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1"
     },
     {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.6312.105 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml",
         "Accept-Language": "en-US,en;q=0.8",
         "Referer": "https://search.brave.com/",
-        "Connection": "keep-alive"
+        "Connection": "keep-alive",
+        "DNT": "1",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1"
     },
     {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.128 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "en-GB,en;q=0.9",
         "Referer": "https://duckduckgo.com/",
-        "Connection": "keep-alive"
+        "Connection": "keep-alive",
+        "DNT": "1",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1"
     }
 ]
 
@@ -68,12 +86,28 @@ with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
             break
 
         case_number = f"{prefix}{str(current).zfill(6)}"
-        url = f"https://www.superiorcourt.maricopa.gov/docket/CriminalCourtCases/caseInfo.asp?caseNumber={case_number}"
+        random_param = random.randint(100000, 999999)
+        url = f"https://www.superiorcourt.maricopa.gov/docket/CriminalCourtCases/caseInfo.asp?caseNumber={case_number}&r={random_param}"
         print(f"{timestamp()} Checking case: {case_number}", flush=True)
 
         while True:
             headers = random.choice(header_pool)
             try:
+                # Visit homepage before main request
+                try:
+                    homepage_url = "https://www.superiorcourt.maricopa.gov"
+                    home_headers = random.choice(header_pool)
+                    session.get(homepage_url, headers=home_headers, timeout=10)
+                    print(f"{timestamp()} 👣 Visited homepage before case request", flush=True)
+                    time.sleep(random.uniform(2, 5))
+                except Exception as e:
+                    print(f"{timestamp()} ⚠️ Homepage visit failed: {e}", flush=True)
+
+                # Occasionally rotate session
+                if current % 15 == 0:
+                    session = requests.Session()
+                    print(f"{timestamp()} 🔄 New session created to mimic browser restart", flush=True)
+
                 req = session.get(url, headers=headers, timeout=15)
                 print(f"{timestamp()} Request status: {req.status_code} URL: {req.url}", flush=True)
 
@@ -143,7 +177,7 @@ with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
                 break
 
         sleep_duration = random.uniform(4, 9)
-        print(f"{timestamp()} 💤 Sleeping for {sleep_duration:.2f} seconds to simulate human-like pacing...", flush=True)
+        print(f"{timestamp()} 💩 Sleeping for {sleep_duration:.2f} seconds to simulate human-like pacing...", flush=True)
         time.sleep(sleep_duration)
 
         current += 1
