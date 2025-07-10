@@ -5,10 +5,19 @@ on:
     types: [continue-with-b]
 
 jobs:
-  run-scraper-b:
+  run-matrix-scraper:
     if: ${{ github.event.action != 'cancelled' }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        instance: [1, 2, 3, 4]  # Launches 4 parallel attempts
     steps:
+      - name: Random delay to spread requests
+        run: |
+          SEED=$((RANDOM % 20 + 5))
+          echo "Sleeping for $SEED seconds before running scraper..."
+          sleep $SEED
+
       - name: Checkout repo
         uses: actions/checkout@v3
 
@@ -57,4 +66,3 @@ jobs:
               -d "{\"event_type\":\"continue-with-c\",\"client_payload\":{\"start\":\"$NEXT_START\",\"end\":\"${{ github.event.client_payload.end }}\",\"year\":\"${{ github.event.client_payload.year }}\"}}"
           else
             echo "✅ Workflow B finished full range."
-          fi
