@@ -25,7 +25,6 @@ with open("progress.txt", "w") as prog:
 
 temp_csv_file = f"charges_CR{year}_{start}-placeholder.csv"
 
-# 🔁 Updated rotating headers
 header_pool = [
     {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
@@ -86,16 +85,12 @@ with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
                 soup = BeautifulSoup(req.content, "html.parser")
                 page_text = soup.get_text(strip=True)
 
-                if "Server busy. Please try again later." in page_text:
-                    print(f"{timestamp()} 🔄 Server busy detected. Rotating headers and retrying...", flush=True)
-                    time.sleep(random.uniform(5, 8))
+                if "Server busy" in page_text or "Please try again later" in page_text or "temporarily unavailable" in page_text:
+                    print(f"{timestamp()} 🔄 Server busy detected. Retrying after delay...", flush=True)
+                    time.sleep(random.uniform(10, 25))
                     continue
-                elif "Please try again later" in page_text or "temporarily unavailable" in page_text:
-                    print(f"{timestamp()} ⚠️ Similar server message detected. Snippet:\n{page_text[:300]}", flush=True)
-                    break
-                else:
-                    print(f"{timestamp()} ℹ️ Page snippet for {case_number}: {page_text[:300]}", flush=True)
 
+                print(f"{timestamp()} ℹ️ Page snippet for {case_number}: {page_text[:300]}", flush=True)
                 last_successful = current
                 with open("progress.txt", "w") as prog:
                     prog.write(str(last_successful + 1))
@@ -148,7 +143,7 @@ with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
                 break
 
         sleep_duration = random.uniform(4, 9)
-        print(f"{timestamp()} 💤 Sleeping for {sleep_duration:.2f} seconds to simulate human-like pacing...", flush=True)
+        print(f"{timestamp()} 💩 Sleeping for {sleep_duration:.2f} seconds to simulate human-like pacing...", flush=True)
         time.sleep(sleep_duration)
 
         current += 1
