@@ -1,157 +1,217 @@
-import requests
-from bs4 import BeautifulSoup
-import csv
-import time
 import os
+import requests
+import time
 import random
-from datetime import datetime, timedelta
+import logging
+from bs4 import BeautifulSoup
+from datetime import datetime
+from pyairtable import Api
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
-def timestamp():
-    return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+# --- Logging Setup ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-start = int(os.getenv("START", 0))
-end = int(os.getenv("END", 9999))
-year = int(os.getenv("YEAR", 2023))
-prefix = f"CR{year}-"
+AIRTABLE_API_KEY = os.environ["AIRTABLE_API_KEY"]
+BASE_ID = "appwbCU6BAWOA1AQX"
+TABLE_ID = "tblb0yIYr91PzghXQ"
 
-fieldnames = ["Case Number", "URL", "Charge", "Defendant", "Disposition"]
+api = Api(AIRTABLE_API_KEY)
+table = api.table(BASE_ID, TABLE_ID)
 
-current = start
-last_successful = start
-found_relevant_charge = False
+TODAY = datetime.today()
 
-with open("progress.txt", "w") as prog:
-    prog.write(str(current))
-
-temp_csv_file = f"charges_CR{year}_{start}-placeholder.csv"
-
-header_pool = [
-    {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://startpage.com/",
-        "Connection": "keep-alive"
-    },
-    {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.6312.105 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml",
-        "Accept-Language": "en-US,en;q=0.8",
-        "Referer": "https://search.brave.com/",
-        "Connection": "keep-alive"
-    },
-    {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.128 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-GB,en;q=0.9",
-        "Referer": "https://duckduckgo.com/",
-        "Connection": "keep-alive"
-    }
+# --- Rotating User-Agent Headers ---
+user_agents = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.198 Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
 ]
 
-start_time = datetime.now()
-max_duration = timedelta(hours=5)
+# --- Session with Retry and Realistic Headers ---
+session = requests.Session()
+retries = Retry(total=5, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504], raise_on_status=False)
+session.mount("https://", HTTPAdapter(max_retries=retries))
+session.headers.update({
+    "User-Agent": random.choice(user_agents),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.superiorcourt.maricopa.gov/",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-User": "?1",
+    "DNT": "1",
+    "TE": "trailers"
+})
 
-with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
-    writer = csv.DictWriter(f, fieldnames=fieldnames)
-    writer.writeheader()
+def extract_docket_data(url, suspect_name):
+    # Simulate browser navigation by visiting homepage first
+    session.get("https://www.superiorcourt.maricopa.gov/docket/")
+    time.sleep(random.uniform(2, 5))
 
-    print(f"{timestamp()} 🔁 Running case range: {start} to {end} for year {year}", flush=True)
+    delay = random.uniform(60, 90)
+    time.sleep(delay)
+    logging.info(f"Hitting {url} after sleeping {delay:.2f} seconds")
 
-    session = requests.Session()
+    response = session.get(url)
+    logging.info(f"Received {response.status_code} from {url}")
 
-    while current <= end:
-        if datetime.now() - start_time > max_duration:
-            print(f"{timestamp()} ⏱️ Max run time of 5 hours exceeded. Saving progress and exiting...", flush=True)
-            with open("progress.txt", "w") as prog:
-                prog.write(str(current))
-            break
+    if "server is busy" in response.text.lower():
+        logging.warning(f"'Server is busy' message detected at {url}")
 
-        case_number = f"{prefix}{str(current).zfill(6)}"
-        url = f"https://www.superiorcourt.maricopa.gov/docket/CriminalCourtCases/caseInfo.asp?caseNumber={case_number}"
-        print(f"{timestamp()} Checking case: {case_number}", flush=True)
+    soup = BeautifulSoup(response.content, "html.parser")
 
-        while True:
-            headers = random.choice(header_pool)
-            try:
-                req = session.get(url, headers=headers, timeout=15)
-                print(f"{timestamp()} Request status: {req.status_code} URL: {req.url}", flush=True)
+    title_tag = soup.find("title")
+    if title_tag:
+        logging.info(f"Page title: {title_tag.get_text(strip=True)}")
+    else:
+        logging.warning("No <title> tag found on the page")
+        logging.debug(response.text[:1000])
 
-                if not req.content.strip():
-                    print(f"{timestamp()} ⚠️ Empty response body for {case_number}. Status: {req.status_code}", flush=True)
-                    print(f"{timestamp()} 🔎 Response headers: {dict(req.headers)}", flush=True)
+    result = {
+        "Attorney": None,
+        "Crime": None,
+        "Status": None,
+        "Next Hearing": None,
+        "Next Hearing Date": None,
+        "Trial": None,
+        "Sentencing": None,
+        "fldX72Wdvk52dP8NG": None
+    }
+
+    party_sections = soup.find_all("div", id="tblForms2")
+    for section in party_sections:
+        labels = section.find_all("div", class_="col-4 m-visibility bold-font")
+        values = section.find_all("div", class_="col-8 col-lg-3")
+        for i, label in enumerate(labels):
+            if label.text.strip() == "Party Name" and i < len(values):
+                name = values[i].get_text(strip=True)
+                if "State Of Arizona" in name:
+                    for j, lbl in enumerate(labels):
+                        if lbl.text.strip() == "Attorney" and j < len(values):
+                            result["Attorney"] = values[j].get_text(strip=True)
                     break
 
-                soup = BeautifulSoup(req.content, "html.parser")
-                page_text = soup.get_text(strip=True)
+    disposition_section = soup.find("div", id="tblDocket12")
+    charges = []
+    if disposition_section:
+        rows = disposition_section.find_all("div", class_="row g-0")
+        for row in rows:
+            cols = row.find_all("div")
+            party, description, disposition, disp_text = None, None, None, ""
 
-                if "Server busy" in page_text or "Please try again later" in page_text or "temporarily unavailable" in page_text:
-                    print(f"{timestamp()} 🔄 Server busy detected. Retrying after delay...", flush=True)
-                    time.sleep(random.uniform(10, 25))
+            for i in range(len(cols)):
+                label = cols[i].get_text(strip=True)
+                if "Party Name" == label and i + 1 < len(cols):
+                    party = cols[i + 1].get_text(strip=True)
+                elif "Description" == label and i + 1 < len(cols):
+                    description = cols[i + 1].get_text(strip=True)
+                elif "Disposition" == label and i + 1 < len(cols):
+                    disposition = cols[i + 1].get_text(strip=True)
+                elif "Disposition" in label and i + 1 < len(cols):
+                    disp_text = cols[i + 1].get_text(strip=True)
+
+            if party and suspect_name.lower() in party.lower() and description:
+                charges.append({
+                    "description": description,
+                    "disposition": disposition,
+                    "disposition_text": disp_text,
+                    "has_murder": "MURDER" in description.upper(),
+                    "is_guilty": "GUILTY" in disp_text.upper(),
+                    "is_empty": disp_text.strip() == ""
+                })
+
+    def pick_best_charge(charges):
+        for c in charges:
+            if c["is_empty"]:
+                return c
+        for c in charges:
+            if c["is_guilty"]:
+                return c
+        for c in charges:
+            if c["has_murder"]:
+                return c
+        return charges[0] if charges else None
+
+    selected = pick_best_charge(charges)
+    if selected:
+        result["Crime"] = selected["description"]
+        result["Status"] = selected["disposition"]
+
+    calendar = soup.find(id="tblForms4")
+    if calendar:
+        rows = calendar.find_all("div", class_="row g-0")
+        future_dates = []
+        for row in rows:
+            date_div = row.find("div", class_="col-6 col-lg-2")
+            event_div = row.find("div", class_="col-6 col-lg-8")
+            if date_div and event_div:
+                try:
+                    date_obj = datetime.strptime(date_div.text.strip(), "%m/%d/%Y")
+                    event_str = event_div.text.strip()
+                    if date_obj >= TODAY:
+                        future_dates.append((date_obj, event_str))
+                except:
                     continue
 
-                print(f"{timestamp()} ℹ️ Page snippet for {case_number}: {page_text[:300]}", flush=True)
-                last_successful = current
-                with open("progress.txt", "w") as prog:
-                    prog.write(str(last_successful + 1))
+        if future_dates:
+            future_dates.sort()
+            next_hearing_date, next_hearing = future_dates[0]
+            result["Next Hearing Date"] = next_hearing_date.strftime("%Y-%m-%d")
+            result["Next Hearing"] = next_hearing
 
-                if soup.find("p", class_="emphasis") and "no cases found" in soup.find("p", class_="emphasis").text.lower():
-                    print(f"{timestamp()} ❌ No case found message detected for {case_number}", flush=True)
-                else:
-                    charges_section = soup.find("div", id="tblDocket12")
-                    if not charges_section:
-                        print(f"{timestamp()} No charges section found for {case_number}", flush=True)
-                    else:
-                        rows = charges_section.find_all("div", class_="row g-0")
-                        print(f"{timestamp()} Found {len(rows)} rows for {case_number}", flush=True)
+            for dt, ev in future_dates:
+                if "TRIAL" in ev.upper() and not result["Trial"]:
+                    result["Trial"] = dt.strftime("%Y-%m-%d")
+                if "SENTENCING" in ev.upper() and not result["Sentencing"]:
+                    result["Sentencing"] = dt.strftime("%Y-%m-%d")
 
-                        for row in rows:
-                            print(f"{timestamp()} Processing row for {case_number}", flush=True)
-                            divs = row.find_all("div")
-                            fields = [div.get_text(strip=True) for div in divs]
+    filings = soup.find("div", id="tblForms3")
+    latest_date = None
+    latest_description = None
+    if filings:
+        rows = filings.find_all("div", class_="row g-0")
+        for row in rows:
+            divs = row.find_all("div")
+            date_found = None
+            description = None
+            for i in range(len(divs)):
+                if "Filing Date" in divs[i].text and i + 1 < len(divs):
+                    try:
+                        date_found = datetime.strptime(divs[i + 1].text.strip(), "%m/%d/%Y")
+                    except:
+                        pass
+                if "Description" in divs[i].text and i + 1 < len(divs):
+                    description = divs[i + 1].text.strip()
+            if date_found and description:
+                if not latest_date or date_found > latest_date:
+                    latest_date = date_found
+                    latest_description = description
 
-                            description = ""
-                            disposition = ""
-                            defendant_name = ""
+    if latest_description:
+        result["fldX72Wdvk52dP8NG"] = latest_description
 
-                            for idx, text in enumerate(fields):
-                                if "Party Name" in text and idx + 1 < len(fields):
-                                    defendant_name = fields[idx + 1]
-                                if "Description" in text and idx + 1 < len(fields):
-                                    description = fields[idx + 1]
-                                if "Disposition" in text and idx + 1 < len(fields):
-                                    disposition = fields[idx + 1]
+    return result
 
-                            if description and ("MURDER" in description.upper() or "MANSLAUGHTER" in description.upper()):
-                                charge_type = "MURDER" if "MURDER" in description.upper() else "MANSLAUGHTER"
-                                print(f"{timestamp()} {case_number} → Found {charge_type} charge: '{description}' with disposition: {disposition}", flush=True)
-                                writer.writerow({
-                                    "Case Number": case_number,
-                                    "URL": url,
-                                    "Charge": description,
-                                    "Defendant": defendant_name,
-                                    "Disposition": disposition
-                                })
-                                found_relevant_charge = True
-                break
+# --- MAIN LOOP ---
+records = table.all(fields=["Suspect Name", "Court Docket"])
+for record in records:
+    fields = record.get("fields", {})
+    suspect = fields.get("Suspect Name")
+    docket_url = fields.get("Court Docket")
 
-            except requests.exceptions.RequestException as e:
-                print(f"{timestamp()} ⚠️ Request error with {case_number}: {e}", flush=True)
-                time.sleep(random.uniform(5, 10))
-            except Exception as e:
-                print(f"{timestamp()} ⚠️ General error with {case_number}: {e}", flush=True)
-                break
+    if not suspect or not docket_url:
+        continue
 
-        sleep_duration = random.uniform(4, 9)
-        print(f"{timestamp()} 💤 Sleeping for {sleep_duration:.2f} seconds to simulate human-like pacing...", flush=True)
-        time.sleep(sleep_duration)
-
-        current += 1
-
-if found_relevant_charge:
-    final_csv_file = f"charges_CR{year}_{start}-{last_successful}.csv"
-    os.rename(temp_csv_file, final_csv_file)
-    print(f"{timestamp()} ✅ CSV file saved: {final_csv_file}", flush=True)
-else:
-    os.remove(temp_csv_file)
-    print(f"{timestamp()} ❌ No murder or manslaughter charges found. CSV not saved.", flush=True)
+    try:
+        print(f"Processing {suspect}")
+        data = extract_docket_data(docket_url, suspect)
+        print(f"Updating: {data}")
+        table.update(record["id"], data)
+    except Exception as e:
+        logging.error(f"Error processing {suspect}: {e}")
