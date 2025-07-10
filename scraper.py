@@ -23,11 +23,6 @@ found_relevant_charge = False
 with open("progress.txt", "w") as prog:
     prog.write(str(current))
 
-# Exit early if another run succeeded
-if os.path.exists("stop.flag"):
-    print(f"{timestamp()} ⛔ Detected stop.flag from another run — exiting early.", flush=True)
-    exit(0)
-
 temp_csv_file = f"charges_CR{year}_{start}-placeholder.csv"
 
 header_pool = [
@@ -103,13 +98,8 @@ with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
                     home_headers = random.choice(header_pool)
                     session.get(homepage_url, headers=home_headers, timeout=10)
                     print(f"{timestamp()} 👣 Visited homepage before case request", flush=True)
-                    time.sleep(random.uniform(2, 5))
                 except Exception as e:
                     print(f"{timestamp()} ⚠️ Homepage visit failed: {e}", flush=True)
-
-                if current % 15 == 0:
-                    session = requests.Session()
-                    print(f"{timestamp()} 🔄 New session created to mimic browser restart", flush=True)
 
                 req = session.get(url, headers=headers, timeout=15)
                 print(f"{timestamp()} Request status: {req.status_code} URL: {req.url}", flush=True)
@@ -126,7 +116,6 @@ with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
                     print(f"{timestamp()} 🔄 Server busy detected. Retrying after delay...", flush=True)
                     with open("retry.flag", "w") as rf:
                         rf.write("retry")
-                    time.sleep(random.uniform(10, 25))
                     continue
 
                 print(f"{timestamp()} ℹ️ Page snippet for {case_number}: {page_text[:300]}", flush=True)
@@ -172,20 +161,13 @@ with open(temp_csv_file, mode="w", newline="", encoding="utf-8") as f:
                                     "Disposition": disposition
                                 })
                                 found_relevant_charge = True
-                                with open("stop.flag", "w") as flag:
-                                    flag.write("done")
                 break
 
             except requests.exceptions.RequestException as e:
                 print(f"{timestamp()} ⚠️ Request error with {case_number}: {e}", flush=True)
-                time.sleep(random.uniform(5, 10))
             except Exception as e:
                 print(f"{timestamp()} ⚠️ General error with {case_number}: {e}", flush=True)
                 break
-
-        sleep_duration = random.uniform(4, 9)
-        print(f"{timestamp()} 💤 Sleeping for {sleep_duration:.2f} seconds to simulate human-like pacing...", flush=True)
-        time.sleep(sleep_duration)
 
         current += 1
 
