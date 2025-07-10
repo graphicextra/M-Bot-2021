@@ -40,13 +40,14 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install beautifulsoup4 requests
+          pip install pyairtable beautifulsoup4 requests
 
       - name: Run scraper
         env:
           START: ${{ inputs.START }}
           END: ${{ inputs.END }}
           YEAR: ${{ inputs.YEAR }}
+          AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
         run: python scraper.py
 
       - name: Create named zip if CSV exists
