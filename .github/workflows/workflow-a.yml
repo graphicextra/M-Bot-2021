@@ -2,26 +2,10 @@ name: Workflow A - Run Scraper
 
 on:
   workflow_dispatch:
-    inputs:
-      START:
-        description: "Start number"
-        required: true
-        default: "0"
-      END:
-        description: "End number"
-        required: true
-        default: "100"
-      YEAR:
-        description: "Year"
-        required: true
-        default: "2024"
 
 jobs:
-  run-matrix-scraper:
+  run-scraper:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        instance: [1, 2, 3, 4]  # Launches 4 parallel attempts
     steps:
       - name: Random delay to spread requests
         run: |
@@ -40,41 +24,20 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pyairtable beautifulsoup4 requests
+          pip install beautifulsoup4 requests
 
       - name: Run scraper
-        env:
-          START: ${{ inputs.START }}
-          END: ${{ inputs.END }}
-          YEAR: ${{ inputs.YEAR }}
-          AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
         run: python scraper.py
 
-      - name: Create named zip if CSV exists
-        if: success() && hashFiles('charges_CR*.csv') != ''
+      - name: Zip output CSV (if exists)
+        if: success() && hashFiles('court_scrape_results.csv') != ''
         run: |
-          CSV_NAME=$(ls charges_CR*.csv)
-          ZIP_NAME="${CSV_NAME%.csv}.zip"
-          zip "$ZIP_NAME" "$CSV_NAME" progress.txt || true
-          echo "ZIPPED_FILE=$ZIP_NAME" >> $GITHUB_ENV
+          zip output.zip court_scrape_results.csv || true
+          echo "ZIPPED_FILE=output.zip" >> $GITHUB_ENV
 
-      - name: Upload named artifact
+      - name: Upload zipped results
         if: success() && env.ZIPPED_FILE != ''
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ZIPPED_FILE }}
           path: ${{ env.ZIPPED_FILE }}
-
-      - name: Trigger Workflow B if progress exists
-        if: success() && hashFiles('progress.txt') != ''
-        run: |
-          NEXT_START=$(cat progress.txt)
-          if [ "$NEXT_START" -lt "${{ inputs.END }}" ]; then
-            echo "🔁 Triggering Workflow B"
-            curl -X POST \
-              -H "Authorization: Bearer ${{ secrets.PAT_TOKEN }}" \
-              -H "Accept: application/vnd.github+json" \
-              https://api.github.com/repos/${{ github.repository }}/dispatches \
-              -d "{\"event_type\":\"continue-with-b\",\"client_payload\":{\"start\":\"$NEXT_START\",\"end\":\"${{ inputs.END }}\",\"year\":\"${{ inputs.YEAR }}\"}}"
-          else
-            echo "✅ Full range completed. No need to continue."
