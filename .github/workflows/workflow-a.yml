@@ -17,7 +17,7 @@ on:
         default: "2024"
 
 jobs:
-  run-single-scraper:
+  run-scraper-a:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -68,3 +68,4 @@ jobs:
               -d "{\"event_type\":\"continue-with-b\",\"client_payload\":{\"start\":\"$NEXT_START\",\"end\":\"${{ inputs.END }}\",\"year\":\"${{ inputs.YEAR }}\"}}"
           else
             echo "✅ Full range completed. No need to continue."
+          fi
