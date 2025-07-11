@@ -1,43 +1,56 @@
-name: Delete All Workflow Runs
+echo "🔄 Starting deletion of workflow runs for $REPO..."
 
-on:
-  workflow_dispatch:
+PAGE=1
 
-jobs:
-  delete-workflows:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete all workflow runs across all pages
-        env:
-          GH_PAT: ${{ secrets.PAT_TOKEN }}  # your Personal Access Token secret
-          REPO: ${{ github.repository }}
-        run: |
-          echo "🔄 Starting deletion of workflow runs for $REPO..."
+while true; do
+  echo "📄 Fetching page $PAGE..."
 
-          PAGE=1
+  RESPONSE=$(curl -s -H "Authorization: Bearer $GH_PAT" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/$REPO/actions/runs?per_page=100&page=$PAGE")
 
-          while true; do
-            echo "📄 Fetching page $PAGE..."
+  # Exit cleanly if the response is invalid or empty
+  if ! echo "$RESPONSE" | jq -e .workflow_runs > /dev/null; then
+    echo "❌ Could not parse workflow_runs from response. Exiting."
+    break
+  fi
 
-            RESPONSE=$(curl -s -H "Authorization: Bearer $GH_PAT" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/$REPO/actions/runs?per_page=100&page=$PAGE")
+  RUN_IDS=$(echo "$RESPONSE" | jq -r '.workflow_runs[].id')
 
-            RUN_IDS=$(echo "$RESPONSE" | jq -r '.workflow_runs[].id')
+  if [ -z "$RUN_IDS" ]; then
+    echo "✅ No more workflow runs found. Exiting."
+    break
+  fi
 
-            if [ -z "$RUN_IDS" ]; then
-              echo "✅ No more workflow runs found. Exiting."
-              break
-            fi
+  for RUN_ID in $RUN_IDS; do
+    echo "🗑️ Deleting run ID: $RUN_ID"
 
-            for RUN_ID in $RUN_IDS; do
-              echo "🗑️ Deleting run ID: $RUN_ID"
-              curl -s -X DELETE \
-                -H "Authorization: Bearer $GH_PAT" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID"
-            done
+    # Check rate limit before deleting
+    RATE_LIMIT_RESPONSE=$(curl -s -H "Authorization: Bearer $GH_PAT" \
+      -H "Accept: application/vnd.github+json" \
+      https://api.github.com/rate_limit)
 
-            PAGE=$((PAGE + 1))
-            sleep 1
-          done
+    REMAINING=$(echo "$RATE_LIMIT_RESPONSE" | jq -r '.rate.remaining')
+    RESET_TIMESTAMP=$(echo "$RATE_LIMIT_RESPONSE" | jq -r '.rate.reset')
+    NOW=$(date +%s)
+
+    if [ "$REMAINING" -le 1 ]; then
+      WAIT_TIME=$((RESET_TIMESTAMP - NOW + 5))
+      echo "⏳ Rate limit hit. Sleeping for $WAIT_TIME seconds..."
+      sleep "$WAIT_TIME"
+    fi
+
+    DELETE_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+      -H "Authorization: Bearer $GH_PAT" \
+      -H "Accept: application/vnd.github+json" \
+      "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID")
+
+    if [ "$DELETE_RESPONSE" != "204" ]; then
+      echo "⚠️ Failed to delete run ID: $RUN_ID. HTTP status: $DELETE_RESPONSE"
+    fi
+
+    sleep 1  # be gentle to GitHub
+  done
+
+  PAGE=$((PAGE + 1))
+done
